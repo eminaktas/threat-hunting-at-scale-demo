@@ -1,0 +1,25 @@
+config:
+  extraFiles:
+    fluentbit-common-outputs.conf: |
+      [OUTPUT]
+        Name            http
+        Alias           kube_audit_to_falco
+        Match           kube_audit
+        Host            falco.falco
+        Port            8765
+        URI             /k8s-audit
+        Format          json
+      [OUTPUT]
+        Name            loki
+        Alias           falco_logs_to_loki
+        Match_Regex     ^kube\.falco\..*$
+        Host            loki.loki
+        Port            3100
+        labels          job=fluentbit, source=falco
+      [OUTPUT]
+        Name            loki
+        Alias           kube_audit_to_loki
+        Match           kube_audit
+        Host            loki.loki
+        Port            3100
+        labels          job=fluentbit, source=kube_audit

@@ -1,0 +1,14 @@
+auditLog:
+  # true here activates the K8s Audit Log feature for Falco
+  enabled: true
+
+falco:
+  jsonOutput: true
+  jsonIncludeOutputProperty: false
+
+  webserver:
+    enabled: true
+
+# Disable the following default rules
+extraArgs:
+  - -DAnonymous Request Allowed
