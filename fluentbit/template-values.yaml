@@ -60,7 +60,7 @@ config:
       Add   x_cluster ${K8S_CLUSTER}
     [FILTER]
       Name        modify
-      Alias       kube_audit_minikube
+      Alias       kube_audit_modify
       Match_Regex ^(kube_audit)$
       Add         x_cluster ${K8S_CLUSTER}
 

@@ -128,8 +128,8 @@ $ helm upgrade --install loki grafana/loki-stack \
 
 ```bash
 # Get user and password information
-$ kubectl get secret loki-grafana -o jsonpath='{.data.admin-user}' | base64 -d
-$ kubectl get secret loki-grafana -o jsonpath='{.data.admin-password}' | base64 -d
+$ kubectl get secret -n loki loki-grafana -o jsonpath='{.data.admin-user}' | base64 -d
+$ kubectl get secret -n loki loki-grafana -o jsonpath='{.data.admin-password}' | base64 -d
 ```
 
 ## Guide your second cluster auidts
