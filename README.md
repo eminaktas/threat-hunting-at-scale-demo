@@ -9,9 +9,11 @@ At Trendyol, we are running production-grade Kubernetes clusters to make our cus
 For you to create the same experience, we will create a cluster with `minikube`. If you don't know how you can install minikube, go to this [link](https://minikube.sigs.k8s.io/docs/start/) for installation.
 
 ```bash
+$ export CLUSTER_1=multinode-cluster-1
 # Let's deploy clusters
-$ minikube start --kubernetes-version=v1.23.4 --nodes 2 -p multinode-cluster-1 --cpus 2 --memory 4096 --driver virtualbox
-$ minikube start --kubernetes-version=v1.23.4 --nodes 2 -p multinode-cluster-2 --cpus 2 --memory 4096 --driver virtualbox
+$ minikube start --kubernetes-version=v1.23.4 --nodes 2 -p $CLUSTER_1 --cpus 2 --memory 4096 --driver virtualbox
+$ export CLUSTER_2=multinode-cluster-2
+$ minikube start --kubernetes-version=v1.23.4 --nodes 2 -p $CLUSTER_2 --cpus 2 --memory 4096 --driver virtualbox
 ```
 
 ### Enable K8s audit
@@ -20,8 +22,8 @@ Following steps should be applied in the minikube so `minikube ssh -p <profile-n
 
 ```bash
 # Accesing our deployed clusters
-$ minikube ssh -p multinode-cluster-1
-$ minikube ssh -p multinode-cluster-2
+$ minikube ssh -p $CLUSTER_1
+$ minikube ssh -p $CLUSTER_2
 ```
 
 ```bash
@@ -82,17 +84,33 @@ $ tail /var/log/kubernetes/audit/audit.log -f
 ...
 ```
 
+Let's register the cluster ips
+
+```bash
+# export cluster ips
+$ export CLUSTER_1_IP=$(minikube ip -p $CLUSTER_1)
+$ export CLUSTER_2_IP=$(minikube ip -p $CLUSTER_2)
+```
+
 ### Install Fluentbit
 
 Apply the following commands for `multinode-cluster-1` and `multinode-cluster-2`.
 
 ```bash
 # Generate values.yaml with the cluster name, so we can know where the logs are coming.
-$ K8S_CLUSTER=<cluster-profile-name> envsubst < fluentbit/template-values.yaml > fluentbit/generated-values.yaml
+$ K8S_CLUSTER=$CLUSTER_1 envsubst < fluentbit/template-values.yaml > fluentbit/generated-values.yaml
 # Run following commands to install fluentbit
 $ helm repo add fluent https://fluent.github.io/helm-charts
 $ helm repo update
-$ helm upgrade --install fluentbit fluent/fluent-bit \
+$ helm --kube-context=$CLUSTER_1 upgrade --install fluentbit fluent/fluent-bit \
+  -f fluentbit/output-values.yaml \
+  -f fluentbit/generated-values.yaml \
+  -n fluentbit \
+  --create-namespace \
+  --version 0.19.20
+# Repeat it for second cluster
+$ K8S_CLUSTER=$CLUSTER_2 envsubst < fluentbit/template-values.yaml > fluentbit/generated-values.yaml
+$ helm --kube-context=$CLUSTER_2 upgrade --install fluentbit fluent/fluent-bit \
   -f fluentbit/output-values.yaml \
   -f fluentbit/generated-values.yaml \
   -n fluentbit \
@@ -102,10 +120,17 @@ $ helm upgrade --install fluentbit fluent/fluent-bit \
 
 ## Install Falco
 
+Install Falco for both clusters.
+
 ```bash
 $ helm repo add falcosecurity https://falcosecurity.github.io/charts
 $ helm repo update
-$ helm upgrade --install falco falcosecurity/falco \
+$ helm --kube-context=$CLUSTER_1 upgrade --install falco falcosecurity/falco \
+  -f falco/values.yaml \
+  -n falco \
+  --create-namespace \
+  --version 1.17.3
+$ helm --kube-context=$CLUSTER_2 upgrade --install falco falcosecurity/falco \
   -f falco/values.yaml \
   -n falco \
   --create-namespace \
@@ -119,7 +144,7 @@ With loki-stack, we are installing loki and grafana. It is enough to install a L
 ```bash
 $ helm repo add grafana https://grafana.github.io/helm-charts
 $ helm repo update
-$ helm upgrade --install loki grafana/loki-stack \
+$ helm --kube-context=$CLUSTER_1 upgrade --install loki grafana/loki-stack \
   -f loki/values.yaml \
   --namespace=loki \
   --create-namespace \
@@ -128,8 +153,8 @@ $ helm upgrade --install loki grafana/loki-stack \
 
 ```bash
 # Get user and password information
-$ kubectl get secret -n loki loki-grafana -o jsonpath='{.data.admin-user}' | base64 -d
-$ kubectl get secret -n loki loki-grafana -o jsonpath='{.data.admin-password}' | base64 -d
+$ kubectl --context=$CLUSTER_1 get secret -n loki loki-grafana -o jsonpath='{.data.admin-user}' | base64 -d
+$ kubectl --context=$CLUSTER_1 get secret -n loki loki-grafana -o jsonpath='{.data.admin-password}' | base64 -d
 ```
 
 ## Guide your second cluster auidts
@@ -138,19 +163,24 @@ We will be creating a service for our second cluster to find correct endpoint. T
 
 ```bash
 # Create a namespace
-$ kubectl create namespace loki
-LOKI_IP=$(minikube ip -p <cluster-profile-name-where-loki-installed>) envsubst < minikube/template-loki-endpoint.yaml > minikube/generated-loki-endpoint.yaml
+$ kubectl --context=$CLUSTER_2 create namespace loki
+# or $CLUSTER_2_IP. Depends where you installed loki
+$ export CLUSTER_1_IP=$(minikube ip -p $CLUSTER_1)
+$ LOKI_IP=$CLUSTER_1_IP envsubst < minikube/template-loki-endpoint.yaml > minikube/generated-loki-endpoint.yaml
+# or $CLUSTER_1. Depends where you didn't install loki
 # Create Loki service
-$ kubectl apply -f minikube/loki-service.yaml
+$ kubectl --context=$CLUSTER_2 apply -f minikube/loki-service.yaml
 # Create Loki endpoint
-$ kubectl apply -f minikube/generated-loki-endpoint.yaml
+$ kubectl --context=$CLUSTER_2 apply -f minikube/generated-loki-endpoint.yaml
 ```
 
 The result is you now have a working system.
 
 ```bash
 # Enter the profile name where you installed grafana.
-minikube ip -p <cluster-profile-name-where-loki-installed>
+$ minikube ip -p $CLUSTER_1 # or $CLUSTER_2. Depends where you installed loki
+# or
+$ echo $CLUSTER_1_IP # or $CLUSTER_2. Depends where you installed loki
 ```
 
 `<cluster-ip>:31300 is the address for grafana`
